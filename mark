@@ -1,0 +1,291 @@
+const config = {
+  client: 'pg',
+  connection: {
+    host: 'localhost',
+    port: 5432,
+    user: 'postgres',
+    password: '1234',
+    database: 'postgres'
+  }
+};
+
+module.exports = require('knex')(config);
+const fs = require("fs");
+
+function readFileData(filePath) {
+  try {
+    return fs.readFileSync(filePath, 'utf-8').trim().split('\n');
+  } catch (error) {
+    console.error(`Error reading the file (${filePath}):`, error.message);
+    return [];
+  }
+}
+
+function getStudentInfo(studentFile, studentID) {
+  const lines = readFileData(studentFile);
+  for (const line of lines) {
+    if (line.trim()) {
+      const [id, name, email, major] = line.split(',');
+      if (id === studentID) {
+        return { id, name, email, major };
+      }
+    }
+  }
+  return {};
+}
+
+function getCourseInfo(courseFile, courseID) {
+  const lines = readFileData(courseFile);
+  for (const line of lines) {
+    if (line.trim()) {
+      const [id, code, name, creditHours] = line.split(',');
+      if (id === courseID) {
+        return { id, code, name, creditHours: parseInt(creditHours) };
+      }
+    }
+  }
+  return {};
+}
+
+function searchCoursesByCreditHours(courseFile, creditHours) {
+  const lines = readFileData(courseFile);
+  return lines
+    .filter(line => {
+      const [, , , creditHoursStr] = line.split(',');
+      return parseInt(creditHoursStr) === creditHours;
+    })
+    .map(line => {
+      const [id, code, name, creditHoursStr] = line.split(',');
+      return { id, code, name, creditHours: parseInt(creditHoursStr) };
+    });
+}
+
+function deleteStudentInfo(studentFile, studentID) {
+  const lines = readFileData(studentFile);
+  const filteredLines = lines.filter((line) => {
+    const [id] = line.split(',');
+    return id.trim() !== studentID;
+  });
+  if (filteredLines.length === lines.length) {
+    return `student id ${studentID} does not exist`;
+  }
+  fs.writeFileSync(studentFile, filteredLines.join('\n'), 'utf-8');
+  return 'successfully deleted';
+}
+
+function updateCourseInfo(courseFile, courseObject) {
+  const lines = readFileData(courseFile);
+  let courseFound = false;
+  const updatedCourses = lines.map(line => {
+    const [id, code, name, creditHours] = line.split(',');
+    if (id === String(courseObject.id)) {
+      courseFound = true;
+      return `${id},${courseObject.code || code},${courseObject.name || name},${courseObject.creditHours || creditHours}`;
+    }
+    return line;
+  });
+
+  if (!courseFound) {
+    console.error('Course not found.');
+    return;
+  }
+
+  fs.writeFileSync(courseFile, updatedCourses.join('\n'), 'utf-8');
+  console.log('Course updated successfully.');
+}
+
+function addStudent(studentFile, studentObject) {
+  const lines = readFileData(studentFile);
+
+// Check if the student already exists
+for (const line of lines) {
+  const [id] = line.split(',');
+  if (id === studentObject.id) {
+    console.log('student already exists.');
+    return {};
+  }
+}
+
+// Generate email if it's not provided
+const nameParts = studentObject.name.toLowerCase().split(' ');
+const email =
+  studentObject.email || `${nameParts[0]}.${nameParts[1]}@student.giu-uni.de`;
+
+// Create the new student entry
+const newStudent = `${studentObject.id},${studentObject.name},${email},${studentObject.major}`;
+lines.push(newStudent);
+
+// Write the updated file
+fs.writeFileSync(studentFile, lines.join('\n'), 'utf-8');
+console.log('student added successfully.');
+
+// Return the new student object
+return {
+  id: studentObject.id,
+  name: studentObject.name,
+  major: studentObject.major,
+  email: email,
+};
+
+}
+
+function addCourse(courseFile, courseObject) {
+  
+  const fs = require('fs');
+
+  const lines = readFileData(courseFile);
+  for (const line of lines) {
+    const [id] = line.split(',');
+    if (id === courseObject.id) {
+      console.log('course already exists.');
+      return {};
+    }
+  }
+  const newCourse = `${courseObject.id},${courseObject.code},${courseObject.name},${courseObject.creditHours}`;
+  lines.push(newCourse);
+  fs.writeFileSync(courseFile, lines.join('\n'), 'utf-8');
+  console.log('course added successfully.');
+  return courseObject;
+}
+ 
+
+
+function addGrade(gradeFile, gradeObject) {
+  const fs = require('fs');
+  // Read the file content or initialize an empty array if the file doesn't exist
+  const lines = fs.existsSync(gradeFile)
+    ? fs.readFileSync(gradeFile, 'utf-8').trim().split('\n')
+    : [];
+
+  let gradeIndex = -1;
+
+  // Locate an existing grade for the same studentId and courseId
+  for (let i = 0; i < lines.length; i++) {
+    const [studentId, courseId, semester, grade] = lines[i].split(',').map((val) => val.trim());
+    if (studentId === gradeObject.studentId && courseId === gradeObject.courseId) {
+      gradeIndex = i;
+      break;
+    }
+  }
+
+  const gradeMapping = {
+    'A+': 4.3,
+    'A': 4.0,
+    'A-': 3.7,
+    'B+': 3.3,
+    'B': 3.0,
+    'B-': 2.7,
+    'C+': 2.3,
+    'C': 2.0,
+    'C-': 1.7,
+    'D+': 1.3,
+    'D': 1.0,
+    'F': 0.0,
+  };
+
+  if (gradeIndex === -1) {
+    // Add new grade entry if no match is found
+    const newGrade = `${gradeObject.studentId},${gradeObject.courseId},${gradeObject.semester},${gradeObject.grade}`;
+    lines.push(newGrade);
+  } else {
+    // Compare grades if a match is found
+    const existingEntry = lines[gradeIndex];
+    const [, , , existingGrade] = existingEntry.split(',').map((val) => val.trim());
+    const existingGradeValue = gradeMapping[existingGrade];
+    const newGradeValue = gradeMapping[gradeObject.grade.trim()];
+
+    if (newGradeValue > existingGradeValue) {
+      // Remove the old entry and add the new grade as the last entry
+      lines.splice(gradeIndex, 1); // Remove the old entry
+      const newGrade = `${gradeObject.studentId},${gradeObject.courseId},${gradeObject.semester},${gradeObject.grade}`;
+      lines.push(newGrade);
+    } else {
+      console.log('No changes made, old grade is better or equal.');
+      return;
+    }
+  }
+
+  // Write updated content to the file without sorting (preserve original order)
+  const output = lines.join('\n') + '\n'; // Ensure the file ends with a newline
+  fs.writeFileSync(gradeFile, output, 'utf-8');
+  console.log('Grade added successfully.');
+}
+
+
+function calculateGPA(gradeFile, courseFile, studentId, semester) {
+  const fs = require('fs');
+
+  const gradeData = fs.existsSync(gradeFile)
+    ? fs.readFileSync(gradeFile, 'utf-8').trim().split('\n')
+    : [];
+  const courseData = fs.existsSync(courseFile)
+    ? fs.readFileSync(courseFile, 'utf-8').trim().split('\n')
+    : [];
+
+  const gradeMapping = {
+    'A+': 0.7,
+    'A': 1.0,
+    'A-': 1.3,
+    'B+': 1.7,
+    'B': 2.0,
+    'B-': 2.3,
+    'C+': 2.7,
+    'C': 3.0,
+    'C-': 3.3,
+    'D+': 3.7,
+    'D': 4.0,
+    'F': 5.0
+  };
+
+  let totalQualityPoints = 0;
+  let totalCreditHours = 0;
+
+  // Iterate over grades
+  gradeData.forEach((gradeLine) => {
+    const [sid, courseId, sem, grade] = gradeLine.split(',').map((val) => val.trim());
+
+    // Match the student ID and semester (if provided)
+    if (sid === studentId && (semester === '' || sem === semester)) {
+      const numericGrade = gradeMapping[grade];
+      if (numericGrade === undefined) return;
+
+      // Find the course in the course file
+      const courseLine = courseData.find((line) => {
+        const [cid] = line.split(',').map((val) => val.trim());
+        return cid === courseId;
+      });
+
+      if (courseLine) {
+        const [, , , creditHoursStr] = courseLine.split(',').map((val) => val.trim());
+        const creditHours = parseFloat(creditHoursStr);
+
+        if (!isNaN(creditHours)) {
+          totalQualityPoints += numericGrade * creditHours;
+          totalCreditHours += creditHours;
+        }
+      }
+    }
+  });
+
+  // Calculate GPA
+  if (totalCreditHours === 0) {
+    return 'Not eligible for GPA calculation';
+  }
+
+  const gpa = totalQualityPoints / totalCreditHours;
+
+  // Ensure the result is rounded consistently using floor-based rounding
+  return Math.floor(gpa * 100) / 100; // Round down to two decimal places
+}
+
+module.exports = {
+  getStudentInfo,
+  getCourseInfo,
+  searchCoursesByCreditHours,
+  deleteStudentInfo,
+  updateCourseInfo,
+  addStudent,
+  addCourse,
+  addGrade,
+  calculateGPA
+};
